@@ -119,11 +119,12 @@ async function startup() {
 
   // Start HTTP server
   const port = Number(process.env.PORT) || 3000;
+  const baseUrl = (process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`).replace(/\/$/, '');
   app.listen(port, () => {
     console.log(`\n✅ keycrm-checkbox-bridge listening on port ${port}`);
-    console.log(`   Health:         http://localhost:${port}/health`);
-    console.log(`   Sync products:  http://localhost:${port}/sync-products?secret=<SYNC_SECRET>`);
-    console.log(`   Webhook:        POST http://localhost:${port}/webhook/checkbox\n`);
+    console.log(`   Health:         ${baseUrl}/health`);
+    console.log(`   Sync products:  ${baseUrl}/sync-products?secret=<SYNC_SECRET>`);
+    console.log(`   Webhook:        POST ${baseUrl}/webhook/checkbox\n`);
   });
 }
 

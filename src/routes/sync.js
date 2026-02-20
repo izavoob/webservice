@@ -84,13 +84,15 @@ router.get('/', async (req, res) => {
         // ── Create ──────────────────────────────────────────────────────
         try {
           const payload = toCheckboxGood(unit, productId, isOffer);
+          console.log(`[sync] Creating good:`, JSON.stringify(payload));
           await checkbox.createGood(payload);
           summary.created++;
           console.log(`[sync] Created: ${code} — ${unit.name}`);
         } catch (err) {
-          const msg = `Failed to create "${code}": ${err.response?.data?.message || err.message}`;
-          console.error(`[sync] ${msg}`);
-          summary.errors.push({ code, reason: msg });
+          const detail = err.response?.data;
+          const msg = `Failed to create "${code}": ${detail?.message || err.message}`;
+          console.error(`[sync] ${msg}`, detail ? JSON.stringify(detail) : '');
+          summary.errors.push({ code, reason: msg, detail });
         }
       } else if (needsUpdate(existing, unit)) {
         // ── Update ──────────────────────────────────────────────────────
