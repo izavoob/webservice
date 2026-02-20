@@ -173,13 +173,11 @@ async function processReceipt(receipt) {
     ...(payments.length ? { payments } : {}),
   };
 
-  // Attach ordered_at from receipt creation time, adjusted to local timezone
+  // Attach ordered_at in Kyiv local time (DST-aware: UTC+2 winter, UTC+3 summer)
   if (receipt.created_at) {
-    const tzOffset = Number(process.env.TZ_OFFSET_HOURS || 2); // Ukraine: UTC+2 winter / UTC+3 summer
-    const dt = new Date(receipt.created_at);
-    dt.setTime(dt.getTime() + tzOffset * 3600000);
-    const pad = n => String(n).padStart(2, '0');
-    orderPayload.ordered_at = `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())} ${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:${pad(dt.getUTCSeconds())}`;
+    // sv-SE locale produces "YYYY-MM-DD HH:MM:SS" — exactly what KeyCRM expects
+    orderPayload.ordered_at = new Date(receipt.created_at)
+      .toLocaleString('sv-SE', { timeZone: 'Europe/Kyiv' });
   }
 
   // ── Create order in KeyCRM ────────────────────────────────────────────────

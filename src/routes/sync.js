@@ -17,33 +17,54 @@ const router = Router();
  * @param {Array}       checkboxGroups  Already-fetched Checkbox groups array (mutated on create)
  * @returns {Promise<string|null>}   Checkbox group UUID or null
  */
-async function resolveGroupId(categoryId, keycrmCats, checkboxGroups) {
+/**
+ * Build a lookup Map from a flat groups array.
+ * Key: "name_lowercase::parentGroupId" — avoids relying on API response field names.
+ * @param {Array} groups
+ * @returns {Map<string, {id: string}>}
+ */
+function buildGroupMap(groups) {
+  const map = new Map();
+  for (const g of groups) {
+    // Checkbox API may use parent_group_id or parent_group.id — normalise both
+    const parentId = g.parent_group_id || g.parent_group?.id || '';
+    const key = `${g.name.toLowerCase().trim()}::${parentId}`;
+    map.set(key, g);
+  }
+  return map;
+}
+
+async function resolveGroupId(categoryId, keycrmCats, groupMap) {
   if (!categoryId) return null;
   const cat = keycrmCats.get(categoryId);
   if (!cat) return null;
 
-  let parentGroupId = null;
+  let parentGroupId = '';
 
   // If this category has a parent → ensure parent group exists first
   if (cat.parent_id) {
     const parentCat = keycrmCats.get(cat.parent_id);
     if (parentCat) {
-      let parentGroup = checkbox.findGroupByName(parentCat.name, null, checkboxGroups);
+      const parentKey = `${parentCat.name.toLowerCase().trim()}::`;
+      let parentGroup = groupMap.get(parentKey);
       if (!parentGroup) {
         console.log(`[sync] Creating Checkbox group: "${parentCat.name}"`);
         parentGroup = await checkbox.createGroup(parentCat.name, null);
-        checkboxGroups.push(parentGroup);
+        groupMap.set(parentKey, parentGroup);
+        console.log(`[sync] Created group id=${parentGroup.id} "${parentCat.name}"`);
       }
       parentGroupId = parentGroup.id;
     }
   }
 
-  // Ensure the category's own group exists (as subgroup if parent was resolved)
-  let group = checkbox.findGroupByName(cat.name, parentGroupId, checkboxGroups);
+  // Ensure the category's own group/subgroup exists
+  const key = `${cat.name.toLowerCase().trim()}::${parentGroupId}`;
+  let group = groupMap.get(key);
   if (!group) {
     console.log(`[sync] Creating Checkbox ${parentGroupId ? 'sub' : ''}group: "${cat.name}"`);
-    group = await checkbox.createGroup(cat.name, parentGroupId);
-    checkboxGroups.push(group);
+    group = await checkbox.createGroup(cat.name, parentGroupId || null);
+    groupMap.set(key, group);
+    console.log(`[sync] Created ${parentGroupId ? 'sub' : ''}group id=${group.id} "${cat.name}"`);
   }
 
   return group.id;
@@ -71,13 +92,15 @@ router.get('/', async (req, res) => {
   try {
     // ── Step 1: fetch categories & Checkbox groups for group resolution ─────
     let keycrmCats = new Map();
-    let checkboxGroups = [];
+    let groupMap = new Map();
     try {
-      [keycrmCats, checkboxGroups] = await Promise.all([
+      const [cats, groups] = await Promise.all([
         keycrm.getProductCategories(),
         checkbox.getGroups(),
       ]);
-      console.log(`[sync] Loaded ${keycrmCats.size} KeyCRM categories, ${checkboxGroups.length} Checkbox groups.`);
+      keycrmCats = cats;
+      groupMap = buildGroupMap(groups);
+      console.log(`[sync] Loaded ${keycrmCats.size} KeyCRM categories, ${groupMap.size} Checkbox groups.`);
     } catch (err) {
       console.warn('[sync] Could not load categories/groups, skipping group assignment:', err.message);
     }
@@ -139,7 +162,7 @@ router.get('/', async (req, res) => {
       // Resolve Checkbox group UUID from KeyCRM category (best-effort)
       let groupId = null;
       try {
-        groupId = await resolveGroupId(categoryId, keycrmCats, checkboxGroups);
+        groupId = await resolveGroupId(categoryId, keycrmCats, groupMap);
       } catch (err) {
         console.warn(`[sync] Could not resolve group for category ${categoryId}: ${err.message}`);
       }
