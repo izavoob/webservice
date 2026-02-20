@@ -43,6 +43,23 @@ app.use(
 // Health check — used by Render and UptimeRobot
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Debug endpoint — returns raw structure of first groups and goods from Checkbox API
+// Use to verify actual field names returned (group_id, parent_group_id, etc.)
+app.get('/debug-checkbox', async (req, res) => {
+  if (req.query.secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const [groups, goods] = await Promise.all([
+      checkbox.getGroups(),
+      checkbox.getGoods(1, 2),
+    ]);
+    return res.json({ groups: groups.slice(0, 5), goods });
+  } catch (err) {
+    return res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
 // Force re-register Checkbox webhook and return the new secret
 // Call once to get CHECKBOX_WEBHOOK_SECRET, then save it in Render env vars
 app.get('/reset-webhook', async (req, res) => {
