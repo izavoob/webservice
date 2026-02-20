@@ -95,9 +95,6 @@ router.post('/', async (req, res) => {
     console.log(`[webhook] Ignored — cashier mismatch: receipt cashier=${receiptCashierId}, ours=${ourCashierId} (likely KeyCRM auto-fiscalization)`);
     return res.json({ ok: true, ignored: true, reason: `cashier mismatch: ${receiptCashierId}` });
   }
-    console.log(`[webhook] Ignored — cashier mismatch: receipt cashier=${receiptCashierId}, ours=${ourCashierId} (likely KeyCRM auto-fiscalization)`);
-    return res.json({ ok: true, ignored: true, reason: `cashier mismatch: ${receiptCashierId}` });
-  }
 
   console.log(`[webhook] ✅ Processing SELL receipt id=${receipt.id} fiscal=${receipt.fiscal_code}`);
 
