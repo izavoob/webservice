@@ -146,7 +146,7 @@ async function createOrder(payload) {
  * @param {object} payload  Partial payload (e.g. { status_id: 12 })
  */
 async function updateOrder(orderId, payload) {
-  const res = await client().patch(`/order/${orderId}`, payload);
+  const res = await client().put(`/order/${orderId}`, payload);
   return res.data;
 }
 

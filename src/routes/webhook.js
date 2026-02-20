@@ -71,6 +71,14 @@ router.post('/', async (req, res) => {
     return res.json({ ok: true, ignored: true, reason: `receipt.type=${receipt.type}` });
   }
 
+  // ── Skip receipts that were created by KeyCRM fiscalization ─────────────
+  // When KeyCRM fiscalizes an order, Checkbox creates a receipt with order_id set
+  // to the KeyCRM order ID. Processing it would create a duplicate order.
+  if (receipt.order_id != null) {
+    console.log(`[webhook] Ignored — receipt.order_id=${receipt.order_id} (originated from KeyCRM fiscalization, not a new sale)`);
+    return res.json({ ok: true, ignored: true, reason: `fiscalization receipt for order ${receipt.order_id}` });
+  }
+
   console.log(`[webhook] ✅ Processing SELL receipt id=${receipt.id} fiscal=${receipt.fiscal_code}`);
 
   // ── Respond 200 immediately (Checkbox requires it within a few seconds) ──
@@ -160,8 +168,9 @@ async function processReceipt(receipt) {
     console.log(
       `[webhook] ✅ Created KeyCRM order #${order.id} from Checkbox receipt ${receipt.id}`
     );
-    // POST /order does not accept status_id — patch it immediately after creation
+    // POST /order does not accept status_id — PUT after 5 s to let KRM settle
     if (statusId && order.id) {
+      await new Promise(r => setTimeout(r, 5000));
       await keycrm.updateOrder(order.id, { status_id: statusId });
       console.log(`[webhook] ✅ Updated order #${order.id} status → ${statusId}`);
     }
