@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: keycrm-checkbox-bridge
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: KEYCRM_API_KEY
+        sync: false
+      - key: KEYCRM_SOURCE_ID
+        sync: false
+      - key: KEYCRM_FISCALIZED_STATUS_ID
+        sync: false
+      - key: KEYCRM_RECEIPT_NUMBER_FIELD_ID
+        sync: false
+      - key: KEYCRM_RECEIPT_LINK_FIELD_ID
+        sync: false
+      - key: CHECKBOX_CASHIER_LOGIN
+        sync: false
+      - key: CHECKBOX_CASHIER_PASSWORD
+        sync: false
+      - key: CHECKBOX_LICENSE_KEY
+        sync: false
+      - key: CHECKBOX_WEBHOOK_SECRET
+        sync: false
+      - key: RENDER_EXTERNAL_URL
+        sync: false
+      - key: CHECKBOX_CASH_PAYMENT_METHOD_ID
+        sync: false
+      - key: CHECKBOX_CASHLESS_PAYMENT_METHOD_ID
+        sync: false
+      - key: SYNC_SECRET
+        sync: false
