@@ -73,19 +73,28 @@ router.post('/', async (req, res) => {
   }
 
   // ── Skip receipts that were created by KeyCRM fiscalization ─────────────
-  // When KeyCRM fiscalizes an order, Checkbox creates a receipt with order_id set
-  // to the KeyCRM order ID. Processing it would create a duplicate order.
+  // Guard 1: receipts created by KeyCRM fiscalization carry order_id != null
   if (receipt.order_id != null) {
-    console.log(`[webhook] Ignored — receipt.order_id=${receipt.order_id} (originated from KeyCRM fiscalization, not a new sale)`);
+    console.log(`[webhook] Ignored — receipt.order_id=${receipt.order_id} (KeyCRM fiscalization)`);
     return res.json({ ok: true, ignored: true, reason: `fiscalization receipt for order ${receipt.order_id}` });
   }
 
-  // ── Skip receipts from a different cashier (e.g. KeyCRM API fiscalization) ─
-  // We only process receipts created by OUR configured POS cashier.
-  // KeyCRM automatic fiscalization uses its own Checkbox API user → different cashier UUID.
+  // Guard 2: fiscalization receipts have goods with good_id=null (not from catalog)
+  // Real POS sales always have good_id set because goods are scanned from catalog.
+  const allGoodsHaveNullId = (receipt.goods || []).length > 0 &&
+    (receipt.goods || []).every(g => g.good_id == null);
+  if (allGoodsHaveNullId) {
+    console.log(`[webhook] Ignored — all good_id are null (KeyCRM fiscalization, goods not from catalog)`);
+    return res.json({ ok: true, ignored: true, reason: 'all good_id null — fiscalization receipt' });
+  }
+
+  // Guard 3: cashier UUID mismatch — fiscalization uses a different Checkbox API user
   const ourCashierId = checkbox.getCashierId();
   const receiptCashierId = receipt.shift?.cashier?.id;
   if (ourCashierId && receiptCashierId && receiptCashierId !== ourCashierId) {
+    console.log(`[webhook] Ignored — cashier mismatch: receipt cashier=${receiptCashierId}, ours=${ourCashierId} (likely KeyCRM auto-fiscalization)`);
+    return res.json({ ok: true, ignored: true, reason: `cashier mismatch: ${receiptCashierId}` });
+  }
     console.log(`[webhook] Ignored — cashier mismatch: receipt cashier=${receiptCashierId}, ours=${ourCashierId} (likely KeyCRM auto-fiscalization)`);
     return res.json({ ok: true, ignored: true, reason: `cashier mismatch: ${receiptCashierId}` });
   }
@@ -156,14 +165,15 @@ async function processReceipt(receipt) {
 
   // ── Build KeyCRM order payload ────────────────────────────────────────────
   const statusId = Number(process.env.KEYCRM_ORDER_STATUS_ID || 12); // 12 = Виконано
+  // Use a fixed buyer ID to avoid creating a new buyer on every order.
+  // Set KEYCRM_BUYER_ID in env (e.g. 4 = "Checkbox POS" buyer).
+  const buyerId = process.env.KEYCRM_BUYER_ID ? Number(process.env.KEYCRM_BUYER_ID) : null;
 
   const orderPayload = {
     source_id: Number(process.env.KEYCRM_SOURCE_ID),
     source_uuid: receipt.id, // idempotency key — prevents duplicate orders
     status_id: statusId,
-    buyer: {
-      full_name: receipt.cashier_name || 'Checkbox POS',
-    },
+    ...(buyerId ? { buyer_id: buyerId } : { buyer: { full_name: receipt.shift?.cashier?.full_name || 'Checkbox POS' } }),
     products,
     ...(payments.length ? { payments } : {}),
   };

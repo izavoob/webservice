@@ -39,8 +39,18 @@ async function login() {
     password: process.env.CHECKBOX_CASHIER_PASSWORD,
   });
   jwtToken = res.data.access_token;
-  // Cache the cashier UUID so we can filter webhook receipts by cashier
-  cashierId = res.data.id || null;
+  // The signin response doesn't include cashier UUID — fetch it separately
+  try {
+    const me = await axios.get(`${BASE_URL}/cashier/me`, {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+        'X-License-Key': process.env.CHECKBOX_LICENSE_KEY,
+      },
+    });
+    cashierId = me.data.id || null;
+  } catch (_) {
+    cashierId = null;
+  }
   console.log(`[checkbox] Signed in, JWT cached. Cashier ID: ${cashierId}`);
   return jwtToken;
 }
