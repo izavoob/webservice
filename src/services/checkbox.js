@@ -5,6 +5,14 @@ const axios = require('axios');
 const BASE_URL = 'https://api.checkbox.ua/api/v1';
 
 let jwtToken = null;
+let cashierId = null;  // UUID of the signed-in cashier, set on login
+
+/**
+ * Returns the UUID of the currently signed-in cashier (set after login).
+ */
+function getCashierId() {
+  return cashierId;
+}
 
 /**
  * Returns an axios instance with Authorization + X-License-Key headers.
@@ -31,7 +39,9 @@ async function login() {
     password: process.env.CHECKBOX_CASHIER_PASSWORD,
   });
   jwtToken = res.data.access_token;
-  console.log('[checkbox] Signed in, JWT cached.');
+  // Cache the cashier UUID so we can filter webhook receipts by cashier
+  cashierId = res.data.id || null;
+  console.log(`[checkbox] Signed in, JWT cached. Cashier ID: ${cashierId}`);
   return jwtToken;
 }
 
@@ -141,4 +151,4 @@ async function deleteWebhook() {
   });
 }
 
-module.exports = { login, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook };
+module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook };

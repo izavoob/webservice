@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { Router } = require('express');
 const keycrm = require('../services/keycrm');
+const checkbox = require('../services/checkbox');
 const { toKeycrmProduct } = require('../utils/mapper');
 
 const router = Router();
@@ -77,6 +78,16 @@ router.post('/', async (req, res) => {
   if (receipt.order_id != null) {
     console.log(`[webhook] Ignored — receipt.order_id=${receipt.order_id} (originated from KeyCRM fiscalization, not a new sale)`);
     return res.json({ ok: true, ignored: true, reason: `fiscalization receipt for order ${receipt.order_id}` });
+  }
+
+  // ── Skip receipts from a different cashier (e.g. KeyCRM API fiscalization) ─
+  // We only process receipts created by OUR configured POS cashier.
+  // KeyCRM automatic fiscalization uses its own Checkbox API user → different cashier UUID.
+  const ourCashierId = checkbox.getCashierId();
+  const receiptCashierId = receipt.shift?.cashier?.id;
+  if (ourCashierId && receiptCashierId && receiptCashierId !== ourCashierId) {
+    console.log(`[webhook] Ignored — cashier mismatch: receipt cashier=${receiptCashierId}, ours=${ourCashierId} (likely KeyCRM auto-fiscalization)`);
+    return res.json({ ok: true, ignored: true, reason: `cashier mismatch: ${receiptCashierId}` });
   }
 
   console.log(`[webhook] ✅ Processing SELL receipt id=${receipt.id} fiscal=${receipt.fiscal_code}`);
