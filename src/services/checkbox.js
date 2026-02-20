@@ -156,7 +156,7 @@ function findGroupByName(name, parentGroupId, cachedGroups) {
   return cachedGroups.find(
     g =>
       g.name.toLowerCase().trim() === needle &&
-      (g.parent_group_id || null) === (parentGroupId || null)
+      (g.parent_id || null) === (parentGroupId || null)
   ) || null;
 }
 
@@ -169,7 +169,7 @@ async function createGroup(name, parentGroupId = null) {
   return withRetry(async () => {
     const res = await client().post('/goods/groups', {
       name,
-      ...(parentGroupId ? { parent_group_id: parentGroupId } : {}),
+      ...(parentGroupId ? { parent_id: parentGroupId } : {}),
     });
     return res.data;
   });

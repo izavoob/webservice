@@ -26,8 +26,8 @@ const router = Router();
 function buildGroupMap(groups) {
   const map = new Map();
   for (const g of groups) {
-    // Checkbox API may use parent_group_id or parent_group.id — normalise both
-    const parentId = g.parent_group_id || g.parent_group?.id || '';
+    // Checkbox API uses parent_id for group parent (confirmed from real API response)
+    const parentId = g.parent_id || '';
     const key = `${g.name.toLowerCase().trim()}::${parentId}`;
     map.set(key, g);
   }
