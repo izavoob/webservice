@@ -160,6 +160,11 @@ async function processReceipt(receipt) {
     console.log(
       `[webhook] ✅ Created KeyCRM order #${order.id} from Checkbox receipt ${receipt.id}`
     );
+    // POST /order does not accept status_id — patch it immediately after creation
+    if (statusId && order.id) {
+      await keycrm.updateOrder(order.id, { status_id: statusId });
+      console.log(`[webhook] ✅ Updated order #${order.id} status → ${statusId}`);
+    }
   } catch (err) {
     const status = err.response?.status;
     const msg = err.response?.data?.message || err.message;

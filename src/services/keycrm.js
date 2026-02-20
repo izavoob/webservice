@@ -140,6 +140,16 @@ async function createOrder(payload) {
   return res.data;
 }
 
+/**
+ * Update an existing order (PATCH).
+ * @param {number|string} orderId
+ * @param {object} payload  Partial payload (e.g. { status_id: 12 })
+ */
+async function updateOrder(orderId, payload) {
+  const res = await client().patch(`/order/${orderId}`, payload);
+  return res.data;
+}
+
 // ─── Reference Data ───────────────────────────────────────────────────────────
 
 /**
@@ -173,6 +183,7 @@ module.exports = {
   getOfferByBarcode,
   getProductByName,
   createOrder,
+  updateOrder,
   getPaymentMethods,
   getOrderStatuses,
   getOrderSources,
