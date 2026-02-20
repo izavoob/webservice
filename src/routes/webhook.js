@@ -151,7 +151,7 @@ async function processReceipt(receipt) {
 
   // Attach ordered_at from receipt creation time
   if (receipt.created_at) {
-    orderPayload.ordered_at = receipt.created_at.replace('T', ' ').split('+')[0].split('Z')[0];
+    orderPayload.ordered_at = receipt.created_at.replace('T', ' ').split('.')[0].split('+')[0].split('Z')[0];
   }
 
   // ── Create order in KeyCRM ────────────────────────────────────────────────
