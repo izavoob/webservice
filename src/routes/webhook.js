@@ -162,15 +162,13 @@ async function processReceipt(receipt) {
 
   // ── Build KeyCRM order payload ────────────────────────────────────────────
   const statusId = Number(process.env.KEYCRM_ORDER_STATUS_ID || 12); // 12 = Виконано
-  // Use a fixed buyer ID to avoid creating a new buyer on every order.
-  // Set KEYCRM_BUYER_ID in env (e.g. 4 = "Checkbox POS" buyer).
-  const buyerId = process.env.KEYCRM_BUYER_ID ? Number(process.env.KEYCRM_BUYER_ID) : null;
+  // buyer_id: фіксований покупець "Checkbox POS". Дефолт=4, перекривається env KEYCRM_BUYER_ID.
+  const buyerId = Number(process.env.KEYCRM_BUYER_ID || 4);
 
   const orderPayload = {
     source_id: Number(process.env.KEYCRM_SOURCE_ID),
     source_uuid: receipt.id, // idempotency key — prevents duplicate orders
-    status_id: statusId,
-    ...(buyerId ? { buyer_id: buyerId } : { buyer: { full_name: receipt.shift?.cashier?.full_name || 'Checkbox POS' } }),
+    buyer_id: buyerId,       // POST /order не підтримує status_id, тому його тут немає
     products,
     ...(payments.length ? { payments } : {}),
   };
