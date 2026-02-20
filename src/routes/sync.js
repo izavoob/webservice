@@ -8,6 +8,25 @@ const { deriveCode, toCheckboxGood, needsUpdate } = require('../utils/mapper');
 const router = Router();
 
 /**
+ * Resolve a KeyCRM category to a Checkbox group UUID.
+ * Creates the group (and its parent group) in Checkbox if they don't exist.
+ * Returns null if category is falsy or on any error.
+ */
+async function resolveGroupId(category) {
+  if (!category || !category.name) return null;
+  try {
+    let parentId = null;
+    if (category.parent && category.parent.name) {
+      parentId = await checkbox.getOrCreateGroup(category.parent.name);
+    }
+    return await checkbox.getOrCreateGroup(category.name, parentId);
+  } catch (err) {
+    console.warn(`[sync] Could not resolve Checkbox group for "${category.name}": ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * GET /sync-products?secret=<SYNC_SECRET>
  *
  * Pulls all products/offers from KeyCRM and upserts them into the
@@ -25,6 +44,9 @@ router.get('/', async (req, res) => {
   const summary = { created: 0, updated: 0, skipped: 0, errors: [] };
   const startedAt = Date.now();
   console.log('[sync] Starting product sync…');
+
+  // Reset group cache so stale data from previous runs doesn’t persist
+  checkbox.clearGroupCache();
 
   try {
     // ── Step 1: collect all KeyCRM syncable units ─────────────────────────
@@ -44,17 +66,18 @@ router.get('/', async (req, res) => {
             const suffix = offer.properties.map((p) => `${p.value}`).join(', ');
             offer.name = `${product.name} — ${suffix}`;
           }
-          units.push({ unit: offer, productId: product.id, isOffer: true });
+          // Carry parent product’s category down to each offer
+          units.push({ unit: offer, productId: product.id, isOffer: true, category: product.category || null });
         }
       } else {
-        units.push({ unit: product, productId: product.id, isOffer: false });
+        units.push({ unit: product, productId: product.id, isOffer: false, category: product.category || null });
       }
     }
 
     console.log(`[sync] Found ${units.length} syncable units in KeyCRM.`);
 
     // ── Step 2: upsert each unit into Checkbox ────────────────────────────
-    for (const { unit, productId, isOffer } of units) {
+    for (const { unit, productId, isOffer, category } of units) {
       if (!unit.name) {
         summary.errors.push({ id: unit.id, reason: 'Missing name, skipped' });
         continue;
@@ -80,27 +103,30 @@ router.get('/', async (req, res) => {
         continue;
       }
 
+      // Resolve Checkbox group from KeyCRM category
+      const groupId = await resolveGroupId(category);
+
       if (!existing) {
         // ── Create ──────────────────────────────────────────────────────
         try {
-          const payload = toCheckboxGood(unit, productId, isOffer);
+          const payload = toCheckboxGood(unit, productId, isOffer, groupId);
           console.log(`[sync] Creating good:`, JSON.stringify(payload));
           await checkbox.createGood(payload);
           summary.created++;
-          console.log(`[sync] Created: ${code} — ${unit.name}`);
+          console.log(`[sync] Created: ${code} — ${unit.name}${groupId ? ` (group: ${category?.name})` : ''}`);
         } catch (err) {
           const detail = err.response?.data;
           const msg = `Failed to create "${code}": ${detail?.message || err.message}`;
           console.error(`[sync] ${msg}`, detail ? JSON.stringify(detail) : '');
           summary.errors.push({ code, reason: msg, detail });
         }
-      } else if (needsUpdate(existing, unit)) {
+      } else if (needsUpdate(existing, unit, groupId)) {
         // ── Update ──────────────────────────────────────────────────────
         try {
-          const payload = toCheckboxGood(unit, productId, isOffer);
+          const payload = toCheckboxGood(unit, productId, isOffer, groupId);
           await checkbox.updateGood(existing.id, payload);
           summary.updated++;
-          console.log(`[sync] Updated: ${code} — ${unit.name}`);
+          console.log(`[sync] Updated: ${code} — ${unit.name}${groupId ? ` (group: ${category?.name})` : ''}`);
         } catch (err) {
           const msg = `Failed to update "${code}": ${err.response?.data?.message || err.message}`;
           console.error(`[sync] ${msg}`);

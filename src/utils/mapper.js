@@ -33,7 +33,7 @@ function slugify(str) {
  * @param {boolean} isOffer   True if the unit is an offer (variant); false if bare product
  * @returns {object}          Checkbox good payload
  */
-function toCheckboxGood(unit, productId, isOffer = false) {
+function toCheckboxGood(unit, productId, isOffer = false, groupId = null) {
   const code = deriveCode(unit);
   const name = unit.name || `Product ${unit.id}`;
   // Checkbox expects price in kopecks (integer), KeyCRM uses decimal UAH
@@ -61,6 +61,11 @@ function toCheckboxGood(unit, productId, isOffer = false) {
     external_id: externalId,
   };
 
+  // Attach group (maps to KeyCRM category → Checkbox group UUID)
+  if (groupId) {
+    payload.group = groupId;
+  }
+
   // Attach barcode if available (and not already used as code)
   if (unit.barcode && unit.barcode.trim()) {
     payload.barcode = unit.barcode.trim();
@@ -76,10 +81,12 @@ function toCheckboxGood(unit, productId, isOffer = false) {
  * @param {object} checkboxGood  Existing good from Checkbox GET response
  * @param {object} keycrmUnit    KeyCRM product or offer unit
  */
-function needsUpdate(checkboxGood, keycrmUnit) {
+function needsUpdate(checkboxGood, keycrmUnit, groupId = null) {
   const expectedPrice = Math.round((keycrmUnit.price || 0) * 100);
   const expectedName = keycrmUnit.name || `Product ${keycrmUnit.id}`;
-  return checkboxGood.price !== expectedPrice || checkboxGood.name !== expectedName;
+  const priceOrNameChanged = checkboxGood.price !== expectedPrice || checkboxGood.name !== expectedName;
+  const groupChanged = groupId !== null && checkboxGood.group_id !== groupId;
+  return priceOrNameChanged || groupChanged;
 }
 
 /**

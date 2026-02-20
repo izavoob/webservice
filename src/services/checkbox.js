@@ -161,4 +161,49 @@ async function deleteWebhook() {
   });
 }
 
-module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook };
+// ─── Groups ─────────────────────────────────────────────────────────────────
+
+let groupCache = null; // { "name::parentId" -> uuid }
+
+async function getAllGroups() {
+  return withRetry(async () => {
+    const res = await client().get('/goods/groups', { params: { limit: 200, offset: 0 } });
+    return res.data.results || [];
+  });
+}
+
+async function createGroup(name, parentId = null) {
+  return withRetry(async () => {
+    const payload = { name };
+    if (parentId) payload.parent_id = parentId;
+    const res = await client().post('/goods/groups', payload);
+    return res.data;
+  });
+}
+
+/**
+ * Returns a Checkbox group UUID by name (and optional parent UUID).
+ * Creates the group if it doesn't exist. Call clearGroupCache() before each sync run.
+ */
+async function getOrCreateGroup(name, parentId = null) {
+  if (!groupCache) {
+    const groups = await getAllGroups();
+    groupCache = {};
+    for (const g of groups) {
+      const key = `${g.name}::${g.parent_id || ''}`;
+      groupCache[key] = g.id;
+    }
+  }
+  const key = `${name}::${parentId || ''}`;
+  if (groupCache[key]) return groupCache[key];
+
+  const newGroup = await createGroup(name, parentId);
+  groupCache[key] = newGroup.id;
+  return newGroup.id;
+}
+
+function clearGroupCache() {
+  groupCache = null;
+}
+
+module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook, getOrCreateGroup, clearGroupCache };

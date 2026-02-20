@@ -112,6 +112,17 @@ router.post('/', async (req, res) => {
 
 // ─── processReceipt ───────────────────────────────────────────────────────────
 
+/**
+ * Convert an ISO date string to 'YYYY-MM-DD HH:MM:SS' in local time.
+ * Shifts UTC time by TZ_OFFSET_HOURS (default 2 for Ukraine UTC+2).
+ */
+function toKeycrmDate(iso) {
+  const tzH = Number(process.env.TZ_OFFSET_HOURS || 2);
+  const d = new Date(iso);
+  const shifted = new Date(d.getTime() + tzH * 3600 * 1000);
+  return shifted.toISOString().replace('T', ' ').split('.')[0];
+}
+
 async function processReceipt(receipt) {
   // ── Build product lines ──────────────────────────────────────────────────
   const products = [];
@@ -173,9 +184,9 @@ async function processReceipt(receipt) {
     ...(payments.length ? { payments } : {}),
   };
 
-  // Attach ordered_at from receipt creation time
+  // Attach ordered_at — convert Checkbox UTC time to local time (TZ_OFFSET_HOURS)
   if (receipt.created_at) {
-    orderPayload.ordered_at = receipt.created_at.replace('T', ' ').split('.')[0].split('+')[0].split('Z')[0];
+    orderPayload.ordered_at = toKeycrmDate(receipt.created_at);
   }
 
   // ── Create order in KeyCRM ────────────────────────────────────────────────

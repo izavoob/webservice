@@ -33,7 +33,7 @@ async function getAllProducts() {
   const limit = 50;
 
   while (true) {
-    const res = await client().get('/products', { params: { limit, page } });
+    const res = await client().get('/products', { params: { limit, page, include: 'category' } });
     const data = res.data;
     products.push(...data.data);
 
