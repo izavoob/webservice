@@ -162,12 +162,13 @@ async function processReceipt(receipt) {
 
   // ── Build KeyCRM order payload ────────────────────────────────────────────
   const statusId = Number(process.env.KEYCRM_ORDER_STATUS_ID || 12); // 12 = Виконано
-  // buyer прив'язується через PUT після створення (POST /order не підтримує buyer_id)
   const buyerId = Number(process.env.KEYCRM_BUYER_ID || 4);
+  const buyerEmail = process.env.KEYCRM_BUYER_EMAIL || 'klumba.zakarpattia@gmail.com';
 
   const orderPayload = {
     source_id: Number(process.env.KEYCRM_SOURCE_ID),
     source_uuid: receipt.id, // idempotency key — prevents duplicate orders
+    buyer: { email: buyerEmail },
     products,
     ...(payments.length ? { payments } : {}),
   };
