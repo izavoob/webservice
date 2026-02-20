@@ -162,13 +162,12 @@ async function processReceipt(receipt) {
 
   // ── Build KeyCRM order payload ────────────────────────────────────────────
   const statusId = Number(process.env.KEYCRM_ORDER_STATUS_ID || 12); // 12 = Виконано
-  // buyer_id: фіксований покупець "Checkbox POS". Дефолт=4, перекривається env KEYCRM_BUYER_ID.
+  // buyer прив'язується через PUT після створення (POST /order не підтримує buyer_id)
   const buyerId = Number(process.env.KEYCRM_BUYER_ID || 4);
 
   const orderPayload = {
     source_id: Number(process.env.KEYCRM_SOURCE_ID),
     source_uuid: receipt.id, // idempotency key — prevents duplicate orders
-    buyer_id: buyerId,       // POST /order не підтримує status_id, тому його тут немає
     products,
     ...(payments.length ? { payments } : {}),
   };
@@ -184,11 +183,11 @@ async function processReceipt(receipt) {
     console.log(
       `[webhook] ✅ Created KeyCRM order #${order.id} from Checkbox receipt ${receipt.id}`
     );
-    // POST /order does not accept status_id — PUT after 5 s to let KRM settle
-    if (statusId && order.id) {
+    // PUT після 5 сек: встановлюємо статус і прив'язуємо покупця
+    if (order.id) {
       await new Promise(r => setTimeout(r, 5000));
-      await keycrm.updateOrder(order.id, { status_id: statusId });
-      console.log(`[webhook] ✅ Updated order #${order.id} status → ${statusId}`);
+      await keycrm.updateOrder(order.id, { status_id: statusId, client_id: buyerId });
+      console.log(`[webhook] ✅ Updated order #${order.id} → status=${statusId}, client_id=${buyerId}`);
     }
   } catch (err) {
     const status = err.response?.status;
