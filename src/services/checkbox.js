@@ -122,6 +122,59 @@ async function updateGood(uuid, payload) {
   });
 }
 
+// ─── Goods Groups ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all goods groups from Checkbox (supports pagination).
+ * Returns flat array of all group objects.
+ */
+async function getGroups() {
+  return withRetry(async () => {
+    const results = [];
+    let page = 1;
+    const limit = 100;
+    while (true) {
+      const res = await client().get('/goods/groups', { params: { limit, offset: (page - 1) * limit } });
+      const data = res.data;
+      const items = data.results || data || [];
+      results.push(...items);
+      if (!data.next || items.length < limit) break;
+      page++;
+    }
+    return results;
+  });
+}
+
+/**
+ * Find a group by name (case-insensitive) within a given parent_group_id (or null for top-level).
+ * @param {string} name
+ * @param {string|null} parentGroupId
+ * @param {Array} cachedGroups  Already-fetched groups array (avoids extra API call)
+ */
+function findGroupByName(name, parentGroupId, cachedGroups) {
+  const needle = name.toLowerCase().trim();
+  return cachedGroups.find(
+    g =>
+      g.name.toLowerCase().trim() === needle &&
+      (g.parent_group_id || null) === (parentGroupId || null)
+  ) || null;
+}
+
+/**
+ * Create a new goods group.
+ * @param {string} name
+ * @param {string|null} parentGroupId  UUID of parent group for a subgroup
+ */
+async function createGroup(name, parentGroupId = null) {
+  return withRetry(async () => {
+    const res = await client().post('/goods/groups', {
+      name,
+      ...(parentGroupId ? { parent_group_id: parentGroupId } : {}),
+    });
+    return res.data;
+  });
+}
+
 // ─── Webhook ─────────────────────────────────────────────────────────────────
 
 /**
@@ -161,49 +214,4 @@ async function deleteWebhook() {
   });
 }
 
-// ─── Groups ─────────────────────────────────────────────────────────────────
-
-let groupCache = null; // { "name::parentId" -> uuid }
-
-async function getAllGroups() {
-  return withRetry(async () => {
-    const res = await client().get('/goods/groups', { params: { limit: 200, offset: 0 } });
-    return res.data.results || [];
-  });
-}
-
-async function createGroup(name, parentId = null) {
-  return withRetry(async () => {
-    const payload = { name };
-    if (parentId) payload.parent_id = parentId;
-    const res = await client().post('/goods/groups', payload);
-    return res.data;
-  });
-}
-
-/**
- * Returns a Checkbox group UUID by name (and optional parent UUID).
- * Creates the group if it doesn't exist. Call clearGroupCache() before each sync run.
- */
-async function getOrCreateGroup(name, parentId = null) {
-  if (!groupCache) {
-    const groups = await getAllGroups();
-    groupCache = {};
-    for (const g of groups) {
-      const key = `${g.name}::${g.parent_id || ''}`;
-      groupCache[key] = g.id;
-    }
-  }
-  const key = `${name}::${parentId || ''}`;
-  if (groupCache[key]) return groupCache[key];
-
-  const newGroup = await createGroup(name, parentId);
-  groupCache[key] = newGroup.id;
-  return newGroup.id;
-}
-
-function clearGroupCache() {
-  groupCache = null;
-}
-
-module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook, getOrCreateGroup, clearGroupCache };
+module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getGroups, findGroupByName, createGroup, getWebhook, registerWebhook, deleteWebhook };

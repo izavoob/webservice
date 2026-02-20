@@ -28,10 +28,11 @@ function slugify(str) {
 /**
  * Convert a KeyCRM product/offer unit into a Checkbox `POST /goods` payload.
  *
- * @param {object} unit       KeyCRM product (has_offers=false) or offer object
- * @param {number} productId  Parent product ID (for external_id)
- * @param {boolean} isOffer   True if the unit is an offer (variant); false if bare product
- * @returns {object}          Checkbox good payload
+ * @param {object} unit          KeyCRM product (has_offers=false) or offer object
+ * @param {number} productId     Parent product ID (for external_id)
+ * @param {boolean} isOffer      True if the unit is an offer (variant); false if bare product
+ * @param {string|null} groupId  Checkbox group UUID to assign (mapped from KeyCRM category)
+ * @returns {object}             Checkbox good payload
  */
 function toCheckboxGood(unit, productId, isOffer = false, groupId = null) {
   const code = deriveCode(unit);
@@ -61,14 +62,14 @@ function toCheckboxGood(unit, productId, isOffer = false, groupId = null) {
     external_id: externalId,
   };
 
-  // Attach group (maps to KeyCRM category → Checkbox group UUID)
-  if (groupId) {
-    payload.group = groupId;
-  }
-
   // Attach barcode if available (and not already used as code)
   if (unit.barcode && unit.barcode.trim()) {
     payload.barcode = unit.barcode.trim();
+  }
+
+  // Attach Checkbox group (mapped from KeyCRM category)
+  if (groupId) {
+    payload.group_id = groupId;
   }
 
   return payload;
@@ -81,12 +82,10 @@ function toCheckboxGood(unit, productId, isOffer = false, groupId = null) {
  * @param {object} checkboxGood  Existing good from Checkbox GET response
  * @param {object} keycrmUnit    KeyCRM product or offer unit
  */
-function needsUpdate(checkboxGood, keycrmUnit, groupId = null) {
+function needsUpdate(checkboxGood, keycrmUnit) {
   const expectedPrice = Math.round((keycrmUnit.price || 0) * 100);
   const expectedName = keycrmUnit.name || `Product ${keycrmUnit.id}`;
-  const priceOrNameChanged = checkboxGood.price !== expectedPrice || checkboxGood.name !== expectedName;
-  const groupChanged = groupId !== null && checkboxGood.group_id !== groupId;
-  return priceOrNameChanged || groupChanged;
+  return checkboxGood.price !== expectedPrice || checkboxGood.name !== expectedName;
 }
 
 /**

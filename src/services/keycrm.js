@@ -33,7 +33,7 @@ async function getAllProducts() {
   const limit = 50;
 
   while (true) {
-    const res = await client().get('/products', { params: { limit, page, include: 'category' } });
+    const res = await client().get('/products', { params: { limit, page } });
     const data = res.data;
     products.push(...data.data);
 
@@ -150,6 +150,30 @@ async function updateOrder(orderId, payload) {
   return res.data;
 }
 
+// ─── Categories ──────────────────────────────────────────────────────────────
+
+/**
+ * Fetch all product categories from KeyCRM.
+ * Returns a Map<categoryId, { id, name, parent_id }>.
+ */
+async function getProductCategories() {
+  const categories = [];
+  let page = 1;
+  const limit = 50;
+  while (true) {
+    const res = await client().get('/products/categories', { params: { limit, page } });
+    const data = res.data;
+    categories.push(...(data.data || data));
+    if (!data.data || data.data.length < limit) break;
+    page++;
+    await sleep(RATE_LIMIT_DELAY_MS);
+  }
+  /** @type {Map<number, {id: number, name: string, parent_id: number|null}>} */
+  const map = new Map();
+  for (const cat of categories) map.set(cat.id, cat);
+  return map;
+}
+
 // ─── Reference Data ───────────────────────────────────────────────────────────
 
 /**
@@ -182,6 +206,7 @@ module.exports = {
   getOfferBySku,
   getOfferByBarcode,
   getProductByName,
+  getProductCategories,
   createOrder,
   updateOrder,
   getPaymentMethods,
