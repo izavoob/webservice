@@ -7,23 +7,26 @@ const { toKeycrmProduct } = require('../utils/mapper');
 
 const router = Router();
 
-// ─── HMAC signature verification ──────────────────────────────────────────────
+// ─── In-memory log of last 20 webhook calls (for /webhook/checkbox/log) ──────
+const recentWebhooks = [];
+function logWebhook(entry) {
+  recentWebhooks.unshift({ ts: new Date().toISOString(), ...entry });
+  if (recentWebhooks.length > 20) recentWebhooks.pop();
+}
 
-/**
- * Verifies the Checkbox HMAC-SHA256 webhook signature.
- * Checkbox computes: HMAC-SHA256(rawBody + webhookSecret)
- *
- * @param {Buffer} rawBody    Raw request body bytes
- * @param {string} signature  Value of x-request-signature header
- */
+// ─── GET /webhook/checkbox/log — inspect recent payloads ─────────────────────
+router.get('/log', (req, res) => {
+  if (req.query.secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return res.json({ count: recentWebhooks.length, events: recentWebhooks });
+});
+
+// ─── HMAC signature verification ──────────────────────────────────────────────
 function verifySignature(rawBody, signature) {
   if (!process.env.CHECKBOX_WEBHOOK_SECRET) return true; // skip if not configured
   const secret = process.env.CHECKBOX_WEBHOOK_SECRET;
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-  // Use timingSafeEqual to prevent timing attacks
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
   } catch {
@@ -31,21 +34,16 @@ function verifySignature(rawBody, signature) {
   }
 }
 
-// ─── Route ────────────────────────────────────────────────────────────────────
-
-/**
- * POST /webhook/checkbox
- *
- * Receives Checkbox webhook events. On a `receipt_notification` for a SELL
- * receipt, creates a corresponding order in KeyCRM with:
- *   - status_id = KEYCRM_ORDER_STATUS_ID (default 12 = "Виконано")
- *   - source_uuid = receipt.id (idempotency key)
- *   - all sold products mapped back to KeyCRM offers by SKU/barcode
- *   - payment method = KEYCRM_PAYMENT_METHOD_ID (default 2 = "Банківська картка")
- */
+// ─── POST /webhook/checkbox ───────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  // ── 1. Verify HMAC signature ─────────────────────────────────────────────
   const signature = req.headers['x-request-signature'];
+
+  // ── Log every incoming call in full ─────────────────────────────────────
+  console.log('[webhook] ⬇ Incoming POST headers:', JSON.stringify(req.headers));
+  console.log('[webhook] ⬇ Incoming POST body:', JSON.stringify(req.body));
+  logWebhook({ headers: req.headers, body: req.body });
+
+  // ── Verify HMAC if secret is configured ─────────────────────────────────
   if (signature && !verifySignature(req.rawBody, signature)) {
     console.warn('[webhook] Invalid signature — rejected');
     return res.status(400).json({ ok: false, error: 'Invalid signature' });
@@ -53,26 +51,29 @@ router.post('/', async (req, res) => {
 
   const body = req.body;
 
-  // ── 2. Filter to SELL receipt_notification events ────────────────────────
-  if (body.callback !== 'receipt_notification') {
-    // Ignore shift/service/order notifications
-    return res.json({ ok: true, ignored: true });
+  // ── Detect receipt from multiple possible Checkbox payload shapes ────────
+  // Checkbox may send: { callback, receipt } or { notification_type, receipt }
+  // or just the receipt object directly. Handle all cases.
+  const callbackType = body.callback || body.notification_type || body.type || '';
+  const receipt =
+    body.receipt ||
+    (callbackType.toLowerCase().includes('receipt') ? body.data || body : null);
+
+  if (!receipt || typeof receipt !== 'object') {
+    console.log(`[webhook] Ignored — no receipt found. callback="${callbackType}"`);
+    return res.json({ ok: true, ignored: true, reason: 'no receipt object found' });
   }
 
-  const receipt = body.receipt;
-  if (!receipt) {
-    return res.status(400).json({ ok: false, error: 'Missing receipt in payload' });
-  }
-
-  if (receipt.type !== 'SELL') {
-    // Ignore RETURN receipts and others
+  // Accept both 'SELL' and 'sell', also treat fiscal receipts as sales
+  const receiptType = (receipt.type || '').toUpperCase();
+  if (receiptType && receiptType !== 'SELL') {
+    console.log(`[webhook] Ignored receipt type: ${receipt.type}`);
     return res.json({ ok: true, ignored: true, reason: `receipt.type=${receipt.type}` });
   }
 
-  console.log(`[webhook] Received SELL receipt ${receipt.id} (fiscal: ${receipt.fiscal_code})`);
+  console.log(`[webhook] ✅ Processing SELL receipt id=${receipt.id} fiscal=${receipt.fiscal_code}`);
 
-  // ── 3. Respond 200 immediately (Checkbox requires it within a few seconds) ─
-  // We process asynchronously after responding.
+  // ── Respond 200 immediately (Checkbox requires it within a few seconds) ──
   res.json({ ok: true });
 
   // ── 4. Process asynchronously ─────────────────────────────────────────────
