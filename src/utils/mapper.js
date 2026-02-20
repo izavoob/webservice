@@ -54,7 +54,8 @@ function toCheckboxGood(unit, productId, isOffer = false) {
     name,
     code,
     price,
-    type: 'PRODUCT',
+    // Checkbox accepts 'good' or 'service' (NOT 'PRODUCT')
+    type: 'good',
     is_weight: false,
     tax_codes: taxCodes,
     external_id: externalId,

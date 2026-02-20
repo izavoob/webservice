@@ -43,6 +43,31 @@ app.use(
 // Health check — used by Render and UptimeRobot
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Force re-register Checkbox webhook and return the new secret
+// Call once to get CHECKBOX_WEBHOOK_SECRET, then save it in Render env vars
+app.get('/reset-webhook', async (req, res) => {
+  if (req.query.secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    // Delete existing webhook first
+    try { await checkbox.deleteWebhook(); } catch (_) { /* ignore if none */ }
+    const renderUrl = process.env.RENDER_EXTERNAL_URL;
+    if (!renderUrl) return res.status(400).json({ error: 'RENDER_EXTERNAL_URL not set' });
+    const webhookUrl = `${renderUrl.replace(/\/$/, '')}/webhook/checkbox`;
+    const result = await checkbox.registerWebhook(webhookUrl);
+    const secret = result?.secret || result?.webhook_secret || null;
+    if (secret) {
+      console.log(`[reset-webhook] New webhook secret: ${secret}`);
+      console.log('[reset-webhook] ⚠️  Save this as CHECKBOX_WEBHOOK_SECRET in Render env vars!');
+    }
+    return res.json({ ok: true, url: webhookUrl, secret, message: 'Save this secret as CHECKBOX_WEBHOOK_SECRET in Render environment variables' });
+  } catch (err) {
+    console.error('[reset-webhook] Error:', err.response?.data || err.message);
+    return res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
 // Product sync endpoint
 app.use('/sync-products', require('./routes/sync'));
 

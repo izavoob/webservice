@@ -123,6 +123,7 @@ async function getWebhook() {
 /**
  * Register a webhook URL with Checkbox.
  * @param {string} url  Public HTTPS URL to receive webhook events
+ * Returns the full response including `secret` on first registration.
  */
 async function registerWebhook(url) {
   return withRetry(async () => {
@@ -131,4 +132,13 @@ async function registerWebhook(url) {
   });
 }
 
-module.exports = { login, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook };
+/**
+ * Delete the currently registered webhook.
+ */
+async function deleteWebhook() {
+  return withRetry(async () => {
+    await client().delete('/webhook');
+  });
+}
+
+module.exports = { login, getGoods, getGoodByCode, createGood, updateGood, getWebhook, registerWebhook, deleteWebhook };
