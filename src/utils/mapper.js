@@ -42,12 +42,21 @@ function toCheckboxGood(unit, productId, isOffer = false) {
     ? `keycrm_offer:${unit.id}`
     : `keycrm_product:${productId}`;
 
+  // tax_codes: required by Ukrainian fiscal law.
+  // Set CHECKBOX_TAX_CODES=A in .env for 20% VAT (most common).
+  // Use empty array [] for no taxes (e.g. exempt goods).
+  const rawTaxCodes = process.env.CHECKBOX_TAX_CODES || '';
+  const taxCodes = rawTaxCodes
+    ? rawTaxCodes.split(',').map((t) => t.trim()).filter(Boolean)
+    : [];
+
   const payload = {
     name,
     code,
     price,
     type: 'PRODUCT',
     is_weight: false,
+    tax_codes: taxCodes,
     external_id: externalId,
   };
 

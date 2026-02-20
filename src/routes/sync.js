@@ -61,6 +61,14 @@ router.get('/', async (req, res) => {
       }
 
       const code = deriveCode(unit);
+
+      // Skip products with no identifiable code
+      if (!code || !code.trim()) {
+        summary.errors.push({ id: unit.id, reason: 'Empty code (no SKU/barcode/name), skipped' });
+        summary.skipped++;
+        continue;
+      }
+
       let existing = null;
 
       try {
