@@ -68,8 +68,9 @@ function toCheckboxGood(unit, productId, isOffer = false, groupId = null) {
   }
 
   // Attach Checkbox group (mapped from KeyCRM category)
+  // NOTE: the Checkbox API payload field is "group", not "group_id"
   if (groupId) {
-    payload.group_id = groupId;
+    payload.group = groupId;
   }
 
   return payload;
