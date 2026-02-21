@@ -176,14 +176,14 @@ router.get('/', async (req, res) => {
           summary.created_names.push(unit.name);
           console.log(`[sync] Created: ${code} — ${unit.name}${groupId ? ` (group ${groupId})` : ''}`);
         } catch (err) {
-          const detail = err.response?.data;
-          const errMsg = detail?.message || err.message || '';
-          // Checkbox returns 422 "вже використовується" when the code already exists
-          // (getGoodByCode can return null due to API inconsistency — treat as skipped)
-          if (err.response?.status === 422 && errMsg.includes('вже використовується')) {
+          // Checkbox returns 422 when the code already exists (getGoodByCode can return
+          // null due to API inconsistency) — treat any 422 on creation as "already exists"
+          if (err.response?.status === 422) {
             summary.skipped++;
             console.log(`[sync] Skipped (already exists): ${code} — ${unit.name}`);
           } else {
+            const detail = err.response?.data;
+            const errMsg = detail?.message || detail?.detail || err.message || '';
             const msg = `Failed to create "${code}": ${errMsg}`;
             console.error(`[sync] ${msg}`, detail ? JSON.stringify(detail) : '');
             summary.errors.push({ code, reason: msg, detail });
