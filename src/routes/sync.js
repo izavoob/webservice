@@ -85,7 +85,7 @@ router.get('/', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized: invalid secret' });
   }
 
-  const summary = { created: 0, updated: 0, skipped: 0, errors: [] };
+  const summary = { created: 0, updated: 0, skipped: 0, errors: [], created_names: [] };
   const startedAt = Date.now();
   console.log('[sync] Starting product sync…');
 
@@ -171,18 +171,26 @@ router.get('/', async (req, res) => {
         // ── Create ──────────────────────────────────────────────────────
         try {
           const payload = toCheckboxGood(unit, productId, isOffer, groupId);
-          console.log(`[sync] Creating good:`, JSON.stringify(payload));
           await checkbox.createGood(payload);
           summary.created++;
+          summary.created_names.push(unit.name);
           console.log(`[sync] Created: ${code} — ${unit.name}${groupId ? ` (group ${groupId})` : ''}`);
         } catch (err) {
           const detail = err.response?.data;
-          const msg = `Failed to create "${code}": ${detail?.message || err.message}`;
-          console.error(`[sync] ${msg}`, detail ? JSON.stringify(detail) : '');
-          summary.errors.push({ code, reason: msg, detail });
+          const errMsg = detail?.message || err.message || '';
+          // Checkbox returns 422 "вже використовується" when the code already exists
+          // (getGoodByCode can return null due to API inconsistency — treat as skipped)
+          if (err.response?.status === 422 && errMsg.includes('вже використовується')) {
+            summary.skipped++;
+            console.log(`[sync] Skipped (already exists): ${code} — ${unit.name}`);
+          } else {
+            const msg = `Failed to create "${code}": ${errMsg}`;
+            console.error(`[sync] ${msg}`, detail ? JSON.stringify(detail) : '');
+            summary.errors.push({ code, reason: msg, detail });
+          }
         }
-      } else if (needsUpdate(existing, unit)) {
-        // ── Update ──────────────────────────────────────────────────────
+      } else if (needsUpdate(existing, unit) || (groupId && existing.group_id !== groupId)) {
+        // ── Update (name/price changed, or group assignment changed) ────
         try {
           const payload = toCheckboxGood(unit, productId, isOffer, groupId);
           await checkbox.updateGood(existing.id, payload);
@@ -208,7 +216,18 @@ router.get('/', async (req, res) => {
     `[sync] Done in ${elapsedSec}s — created: ${summary.created}, updated: ${summary.updated}, skipped: ${summary.skipped}, errors: ${summary.errors.length}`
   );
 
-  return res.json({ ...summary, elapsed_sec: elapsedSec });
+  // ── Ukrainian human-readable summary ────────────────────────────────────
+  const lines = [];
+  if (summary.created_names.length) {
+    lines.push(`Додано товари:\n${summary.created_names.map((n) => `  • ${n}`).join('\n')}`);
+  }
+  if (summary.updated > 0) lines.push(`Оновлено: ${summary.updated}`);
+  if (summary.skipped > 0) lines.push(`Пропущено (без змін): ${summary.skipped}`);
+  if (summary.errors.length) lines.push(`Помилки: ${summary.errors.length}`);
+  const summary_ua = lines.length ? lines.join('\n') : 'Нових товарів не знайдено.';
+
+  const { created_names, ...rest } = summary;
+  return res.json({ summary_ua, ...rest, elapsed_sec: elapsedSec });
 });
 
 module.exports = router;
