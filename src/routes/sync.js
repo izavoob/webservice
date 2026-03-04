@@ -230,4 +230,104 @@ router.get('/', async (req, res) => {
   return res.json({ summary_ua, ...rest, elapsed_sec: elapsedSec });
 });
 
+/**
+ * GET /sync-products/sync-names?secret=<SYNC_SECRET>
+ *
+ * Fetches all products/offers from KeyCRM and updates names in Checkbox
+ * for any goods where the name has drifted from KeyCRM.
+ *
+ * Returns: { updated, skipped, errors, summary_ua, elapsed_sec }
+ */
+router.get('/sync-names', async (req, res) => {
+  // ── Auth guard ──────────────────────────────────────────────────────────
+  if (req.query.secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized: invalid secret' });
+  }
+
+  const summary = { updated: 0, skipped: 0, errors: [], updated_names: [] };
+  const startedAt = Date.now();
+  console.log('[sync-names] Starting name sync…');
+
+  try {
+    // ── Collect all KeyCRM units ──────────────────────────────────────────
+    const products = await keycrm.getAllProducts();
+    /** @type {Array<{unit: object, productId: number, isOffer: boolean}>} */
+    const units = [];
+
+    for (const product of products) {
+      if (product.has_offers) {
+        const offers = await keycrm.getOffersByProduct(product.id);
+        for (const offer of offers) {
+          if (!offer.name) offer.name = product.name;
+          if (offer.properties && offer.properties.length) {
+            const suffix = offer.properties.map((p) => p.value).join(', ');
+            offer.name = `${product.name} — ${suffix}`;
+          }
+          units.push({ unit: offer, productId: product.id, isOffer: true });
+        }
+      } else {
+        units.push({ unit: product, productId: product.id, isOffer: false });
+      }
+    }
+
+    console.log(`[sync-names] Processing ${units.length} units…`);
+
+    // ── Compare and update names ──────────────────────────────────────────
+    for (const { unit } of units) {
+      if (!unit.name) continue;
+
+      const code = deriveCode(unit);
+      if (!code || !code.trim()) continue;
+
+      let existing = null;
+      try {
+        existing = await checkbox.getGoodByCode(code);
+      } catch (err) {
+        summary.errors.push({ code, reason: err.message });
+        continue;
+      }
+
+      if (!existing) {
+        summary.skipped++;
+        continue;
+      }
+
+      if (existing.name === unit.name) {
+        summary.skipped++;
+        continue;
+      }
+
+      try {
+        await checkbox.updateGood(existing.id, { name: unit.name });
+        summary.updated++;
+        summary.updated_names.push(`"${existing.name}" → "${unit.name}"`);
+        console.log(`[sync-names] Updated: "${existing.name}" → "${unit.name}" (code=${code})`);
+      } catch (err) {
+        const msg = `Failed to update name for "${code}": ${err.response?.data?.message || err.message}`;
+        console.error(`[sync-names] ${msg}`);
+        summary.errors.push({ code, reason: msg });
+      }
+    }
+  } catch (err) {
+    console.error('[sync-names] Fatal error:', err.message);
+    return res.status(500).json({ error: err.message, ...summary });
+  }
+
+  const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+  console.log(
+    `[sync-names] Done in ${elapsedSec}s — updated: ${summary.updated}, skipped: ${summary.skipped}, errors: ${summary.errors.length}`
+  );
+
+  const lines = [];
+  if (summary.updated_names.length) {
+    lines.push(`Оновлено назви:\n${summary.updated_names.map((n) => `  • ${n}`).join('\n')}`);
+  }
+  if (summary.skipped > 0) lines.push(`Пропущено (без змін): ${summary.skipped}`);
+  if (summary.errors.length) lines.push(`Помилки: ${summary.errors.length}`);
+  const summary_ua = lines.length ? lines.join('\n') : 'Назви не потребують оновлення.';
+
+  const { updated_names, ...nameRest } = summary;
+  return res.json({ summary_ua, ...nameRest, elapsed_sec: elapsedSec });
+});
+
 module.exports = router;
