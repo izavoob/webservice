@@ -244,7 +244,7 @@ router.get('/sync-names', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized: invalid secret' });
   }
 
-  const summary = { updated: 0, skipped: 0, errors: [], updated_names: [] };
+  const summary = { updated: 0, skipped: 0, not_found: 0, errors: [], updated_names: [] };
   const startedAt = Date.now();
   console.log('[sync-names] Starting name sync…');
 
@@ -258,7 +258,9 @@ router.get('/sync-names', async (req, res) => {
       if (product.has_offers) {
         const offers = await keycrm.getOffersByProduct(product.id);
         for (const offer of offers) {
-          if (!offer.name) offer.name = product.name;
+          // Always rebuild name from current product.name so renamed products propagate.
+          // Do NOT use offer.name directly — it may be stale from before the rename.
+          offer.name = product.name;
           if (offer.properties && offer.properties.length) {
             const suffix = offer.properties.map((p) => p.value).join(', ');
             offer.name = `${product.name} — ${suffix}`;
@@ -273,7 +275,7 @@ router.get('/sync-names', async (req, res) => {
     console.log(`[sync-names] Processing ${units.length} units…`);
 
     // ── Compare and update names ──────────────────────────────────────────
-    for (const { unit } of units) {
+    for (const { unit, productId, isOffer } of units) {
       if (!unit.name) continue;
 
       const code = deriveCode(unit);
@@ -288,7 +290,8 @@ router.get('/sync-names', async (req, res) => {
       }
 
       if (!existing) {
-        summary.skipped++;
+        summary.not_found++;
+        console.log(`[sync-names] Not found in Checkbox (code=${code}), skipping.`);
         continue;
       }
 
@@ -298,7 +301,9 @@ router.get('/sync-names', async (req, res) => {
       }
 
       try {
-        await checkbox.updateGood(existing.id, { name: unit.name });
+        // Use the full payload (same as full sync) — Checkbox PUT requires all fields
+        const payload = toCheckboxGood(unit, productId, isOffer);
+        await checkbox.updateGood(existing.id, payload);
         summary.updated++;
         summary.updated_names.push(`"${existing.name}" → "${unit.name}"`);
         console.log(`[sync-names] Updated: "${existing.name}" → "${unit.name}" (code=${code})`);
@@ -315,14 +320,15 @@ router.get('/sync-names', async (req, res) => {
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
   console.log(
-    `[sync-names] Done in ${elapsedSec}s — updated: ${summary.updated}, skipped: ${summary.skipped}, errors: ${summary.errors.length}`
+    `[sync-names] Done in ${elapsedSec}s — updated: ${summary.updated}, skipped: ${summary.skipped}, not_found: ${summary.not_found}, errors: ${summary.errors.length}`
   );
 
   const lines = [];
   if (summary.updated_names.length) {
     lines.push(`Оновлено назви:\n${summary.updated_names.map((n) => `  • ${n}`).join('\n')}`);
   }
-  if (summary.skipped > 0) lines.push(`Пропущено (без змін): ${summary.skipped}`);
+  if (summary.skipped > 0) lines.push(`Без змін: ${summary.skipped}`);
+  if (summary.not_found > 0) lines.push(`Не знайдено у Checkbox: ${summary.not_found}`);
   if (summary.errors.length) lines.push(`Помилки: ${summary.errors.length}`);
   const summary_ua = lines.length ? lines.join('\n') : 'Назви не потребують оновлення.';
 
