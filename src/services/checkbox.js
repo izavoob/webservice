@@ -102,6 +102,28 @@ async function getGoodByCode(code) {
 }
 
 /**
+ * Fetch ALL goods from the Checkbox catalog via pagination.
+ * Returns a flat array of all good objects.
+ */
+async function getAllGoods() {
+  return withRetry(async () => {
+    const results = [];
+    const limit = 500;
+    let offset = 0;
+    while (true) {
+      const res = await client().get('/goods', { params: { limit, offset } });
+      const data = res.data;
+      const items = (data.results || data || []);
+      results.push(...items);
+      console.log(`[checkbox] getAllGoods: fetched ${items.length} goods at offset ${offset} (total so far: ${results.length})`);
+      if (!data.next || items.length < limit) break;
+      offset += limit;
+    }
+    return results;
+  });
+}
+
+/**
  * Create a new good in the Checkbox catalog.
  * All prices must be in kopecks (UAH × 100).
  */
@@ -214,4 +236,4 @@ async function deleteWebhook() {
   });
 }
 
-module.exports = { login, getCashierId, getGoods, getGoodByCode, createGood, updateGood, getGroups, findGroupByName, createGroup, getWebhook, registerWebhook, deleteWebhook };
+module.exports = { login, getCashierId, getGoods, getGoodByCode, getAllGoods, createGood, updateGood, getGroups, findGroupByName, createGroup, getWebhook, registerWebhook, deleteWebhook };

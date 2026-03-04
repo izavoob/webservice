@@ -274,6 +274,21 @@ router.get('/sync-names', async (req, res) => {
 
     console.log(`[sync-names] Processing ${units.length} units…`);
 
+    // ── Bulk-fetch all Checkbox goods once, build lookup maps ─────────────
+    let goodsByCode = new Map();
+    let goodsByBarcode = new Map();
+    try {
+      const allGoods = await checkbox.getAllGoods();
+      console.log(`[sync-names] Loaded ${allGoods.length} goods from Checkbox.`);
+      for (const g of allGoods) {
+        if (g.code) goodsByCode.set(String(g.code).trim(), g);
+        if (g.barcode) goodsByBarcode.set(String(g.barcode).trim(), g);
+      }
+    } catch (err) {
+      console.error('[sync-names] Failed to load Checkbox goods:', err.message);
+      return res.status(500).json({ error: err.message, ...summary });
+    }
+
     // ── Compare and update names ──────────────────────────────────────────
     for (const { unit, productId, isOffer } of units) {
       if (!unit.name) continue;
@@ -281,13 +296,10 @@ router.get('/sync-names', async (req, res) => {
       const code = deriveCode(unit);
       if (!code || !code.trim()) continue;
 
-      let existing = null;
-      try {
-        existing = await checkbox.getGoodByCode(code);
-      } catch (err) {
-        summary.errors.push({ code, reason: err.message });
-        continue;
-      }
+      const codeStr = String(code).trim();
+      const existing = goodsByCode.get(codeStr)
+        || (unit.barcode ? goodsByBarcode.get(String(unit.barcode).trim()) : null)
+        || null;
 
       if (!existing) {
         summary.not_found++;
